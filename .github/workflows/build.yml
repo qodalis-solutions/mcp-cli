@@ -1,0 +1,43 @@
+name: Build & Test
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches-ignore: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['22', '24', 'latest']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Use the latest npm
+        run: npm install -g npm@latest && node --version && npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run check-format
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests with coverage (unit + stdio end-to-end against the built CLI)
+        run: npm run test:coverage
+
+      - name: Install the packed tarball outside the repo and run the CLI
+        run: bash scripts/check-packed.sh

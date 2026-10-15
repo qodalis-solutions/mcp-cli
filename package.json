@@ -1,0 +1,68 @@
+{
+    "name": "@qodalis/mcp-cli",
+    "version": "0.1.0",
+    "description": "Model Context Protocol (MCP) server for Qodalis CLI servers: gives Claude Code the server's commands, files, data explorer and jobs through a resilient stdio proxy to the server's MCP endpoint.",
+    "type": "module",
+    "main": "dist/src/index.js",
+    "types": "dist/src/index.d.ts",
+    "bin": {
+        "mcp-cli": "dist/src/cli.js"
+    },
+    "files": [
+        "dist/src",
+        "LICENSE",
+        "README.md",
+        "CHANGELOG.md"
+    ],
+    "engines": {
+        "node": ">=20.18.1"
+    },
+    "scripts": {
+        "build": "tsc -p tsconfig.build.json",
+        "clean": "rm -rf dist",
+        "dev": "tsx src/cli.ts",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.md\" \"vitest.config.ts\"",
+        "check-format": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"vitest.config.ts\"",
+        "prepublishOnly": "npm run clean && npm run build"
+    },
+    "keywords": [
+        "mcp",
+        "model-context-protocol",
+        "qodalis",
+        "cli",
+        "claude",
+        "claude-code",
+        "ai",
+        "proxy"
+    ],
+    "author": "Nicolae Lupei <nicolae.lupei@qodalis.com>",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/qodalis-solutions/mcp-cli.git"
+    },
+    "homepage": "https://github.com/qodalis-solutions/mcp-cli#readme",
+    "bugs": {
+        "url": "https://github.com/qodalis-solutions/mcp-cli/issues"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/client": "^2.3.1",
+        "@modelcontextprotocol/server": "^2.3.1",
+        "undici": "^7.30.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.20.5",
+        "@vitest/coverage-v8": "^5.0.5",
+        "prettier": "^3.9.10",
+        "tsx": "^4.23.15",
+        "typescript": "~5.9",
+        "vitest": "^5.0.5"
+    }
+}
