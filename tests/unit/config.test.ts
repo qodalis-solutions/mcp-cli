@@ -16,6 +16,8 @@ describe('loadConfig', () => {
         expect(loadConfig({ QCLI_URL: 'http://localhost:8047' })).toEqual({
             auth: { kind: 'none' },
             connectionTimeoutMs: 8000,
+            devTools: true,
+            docsUrl: 'https://cli.qodalis.com/llms-full.txt',
             exclude: [],
             readOnly: false,
             requestTimeoutMs: 60000,
@@ -35,10 +37,14 @@ describe('loadConfig', () => {
             QCLI_CONNECTION_TIMEOUT: '2000',
             QCLI_REQUEST_TIMEOUT: '5000',
             QCLI_TRUST_CERT: '1',
+            QCLI_DEV_TOOLS: 'off',
+            QODALIS_CLI_DOCS_URL: 'http://localhost:4300/llms-full.txt',
         });
         expect(config).toEqual({
             auth: { kind: 'token', token: 'qcli_pat_x' },
             connectionTimeoutMs: 2000,
+            devTools: false,
+            docsUrl: 'http://localhost:4300/llms-full.txt',
             exclude: ['fs_delete'],
             readOnly: true,
             requestTimeoutMs: 5000,
@@ -60,8 +66,21 @@ describe('loadConfig', () => {
         ).toEqual({ kind: 'password', password: 'pw', user: 'root' });
     });
 
+    it('runs in developer mode without QCLI_URL', () => {
+        expect(loadConfig({})).toMatchObject({
+            auth: { kind: 'none' },
+            devTools: true,
+            url: undefined,
+        });
+        expect(describeConfig(loadConfig({ QCLI_READ_ONLY: 'true' }))).toBe(
+            'developer mode (plugin-development tools only; read-only tools)',
+        );
+    });
+
     it.each([
-        [{}, /QCLI_URL \(or its alias QODALIS_CLI_URL\) is required/],
+        [{ QCLI_DEV_TOOLS: 'false' }, /Nothing to serve: set QCLI_URL/],
+        [{ QCLI_DEV_TOOLS: 'sometimes' }, /QCLI_DEV_TOOLS must be a boolean/],
+        [{ QCLI_DOCS_URL: 'file:///etc/passwd' }, /QCLI_DOCS_URL must be an http\(s\) URL/],
         [{ QCLI_URL: 'ftp://x' }, /http\(s\) URL/],
         [{ QCLI_URL: 'not a url' }, /http\(s\) URL/],
         [{ QCLI_URL: 'http://a', QCLI_TOKEN: 't', QCLI_USER: 'u' }, /not both/],
@@ -91,9 +110,12 @@ describe('loadConfig', () => {
                 QCLI_EXCLUDE: 'fs_delete',
             }),
         );
-        expect(token).toBe('http://a (token auth; all tools)');
+        expect(token).toBe('http://a (token auth; all tools) + plugin-development tools');
         expect(password).toBe(
-            'http://a (signs in as root; read-only tools, allow fs_*, exclude fs_delete)',
+            'http://a (signs in as root; read-only tools, allow fs_*, exclude fs_delete) + plugin-development tools',
+        );
+        expect(describeConfig(loadConfig({ QCLI_DEV_TOOLS: 'false', QCLI_URL: 'http://a' }))).toBe(
+            'http://a (no auth; all tools)',
         );
         expect(token + password).not.toContain('SECRET');
     });

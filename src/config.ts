@@ -20,6 +20,10 @@ export type AuthConfig =
 export type Config = {
     auth: AuthConfig;
     connectionTimeoutMs: number;
+    /** Expose the local plugin-development tools and prompts (`qcli_*`) */
+    devTools: boolean;
+    /** Where the plugin-development docs (`llms-full.txt`) are fetched from */
+    docsUrl: string;
     /** Client-side deny-list (trailing `*` allowed), applied after `tools` */
     exclude: string[];
     /** Expose and allow only tools annotated `readOnlyHint: true` */
@@ -29,9 +33,14 @@ export type Config = {
     tools: string[];
     /** Accept self-signed TLS certificates */
     trustCert: boolean;
-    /** Server base URL, e.g. `https://cli.example.com` (no trailing slash) */
-    url: string;
+    /**
+     * Server base URL, e.g. `https://cli.example.com` (no trailing slash). Without it
+     * the process runs in developer mode: only the local plugin-development tools.
+     */
+    url: string | undefined;
 };
+
+export const DEFAULT_DOCS_URL = 'https://cli.qodalis.com/llms-full.txt';
 
 export const PREFIXES = ['QCLI', 'QODALIS_CLI'];
 
@@ -110,16 +119,21 @@ export const createEnvReader = (env: Env): EnvReader => {
  * Canonical server URL: scheme and host, optional base path, no trailing slash.
  * A pasted endpoint URL (`…/api/qcli/mcp`) is accepted and reduced to the base.
  */
-export const normalizeUrl = (input: string): string => {
+const parseHttpUrl = (input: string, variable: string): URL => {
     let url: URL;
     try {
         url = new URL(input);
     } catch {
-        throw new ConfigError(`QCLI_URL must be an http(s) URL, got "${input}".`);
+        throw new ConfigError(`${variable} must be an http(s) URL, got "${input}".`);
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        throw new ConfigError(`QCLI_URL must be an http(s) URL, got "${input}".`);
+        throw new ConfigError(`${variable} must be an http(s) URL, got "${input}".`);
     }
+    return url;
+};
+
+export const normalizeUrl = (input: string): string => {
+    const url = parseHttpUrl(input, 'QCLI_URL');
     const path = url.pathname.replace(/\/+$/, '').replace(/\/api\/qcli\/mcp$/i, '');
     return `${url.protocol}//${url.host}${path}`;
 };
@@ -145,15 +159,27 @@ const loadAuth = (read: EnvReader): AuthConfig => {
 
 export const loadConfig = (env: Env = process.env): Config => {
     const read = createEnvReader(env);
+    const url = read.optional(names('URL'));
+    const devTools = read.boolean(names('DEV_TOOLS'), true);
+    if (!url && !devTools) {
+        throw new ConfigError(
+            'Nothing to serve: set QCLI_URL to proxy a Qodalis CLI server, or leave QCLI_DEV_TOOLS on for the plugin-development tools.',
+        );
+    }
+    const auth = loadAuth(read);
+    const docsUrl = read.optional(names('DOCS_URL')) ?? DEFAULT_DOCS_URL;
+    parseHttpUrl(docsUrl, 'QCLI_DOCS_URL');
     return {
-        auth: loadAuth(read),
+        auth,
         connectionTimeoutMs: read.positiveInteger(names('CONNECTION_TIMEOUT'), 8000),
+        devTools,
+        docsUrl,
         exclude: read.list(names('EXCLUDE')),
         readOnly: read.boolean(names('READ_ONLY'), false),
         requestTimeoutMs: read.positiveInteger(names('REQUEST_TIMEOUT'), 60000),
         tools: read.list(names('TOOLS')),
         trustCert: read.boolean(names('TRUST_CERT'), false),
-        url: normalizeUrl(read.required(names('URL'))),
+        url: url ? normalizeUrl(url) : undefined,
     };
 };
 
@@ -172,5 +198,9 @@ export const describeConfig = (config: Config): string => {
     ]
         .filter(Boolean)
         .join(', ');
-    return `${config.url} (${auth}; ${filters})`;
+    const dev = config.devTools ? ' + plugin-development tools' : '';
+    if (!config.url) {
+        return `developer mode (plugin-development tools only; ${filters})`;
+    }
+    return `${config.url} (${auth}; ${filters})${dev}`;
 };

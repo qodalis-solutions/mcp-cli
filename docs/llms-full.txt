@@ -1,0 +1,240 @@
+# Qodalis CLI plugin development
+
+Guide for building plugins for Qodalis CLI: commands for the browser terminal (web plugins) and commands served by the Node, .NET and Python servers (server plugins). Full documentation: https://cli.qodalis.com/docs.
+
+## Overview
+
+### Architecture
+
+Qodalis CLI is a web terminal whose commands are command processors registered through modules.
+
+The browser engine (`@qodalis/cli`, wrapped by `@qodalis/angular-cli`, `@qodalis/react-cli` and `@qodalis/vue-cli`) parses each line, finds the processor whose `command` (or alias) matches and calls its `processCommand`. Shared contracts live in `@qodalis/cli-core`. A server (Node, .NET or Python) can contribute more commands: the terminal lists them from `/api/v1/qcli/commands` and runs them through `/api/v1/qcli/execute`.
+
+### Packages
+
+The npm packages a plugin author uses and what each contains.
+
+| Package | Contents |
+| --- | --- |
+| `@qodalis/cli-core` | Interfaces (`ICliCommandProcessor`, `ICliExecutionContext`, `ICliModule`, `ICliInputReader`), types, utilities |
+| `@qodalis/cli` | The framework-agnostic engine (`CliEngine`) |
+| `@qodalis/angular-cli`, `@qodalis/react-cli`, `@qodalis/vue-cli` | Framework wrappers |
+| `@qodalis/create-cli-plugin` | Plugin scaffolding tool |
+| `@qodalis/cli-server-abstractions` (npm), `qodalis-cli-server-abstractions` (PyPI), `Qodalis.Cli.Abstractions` (NuGet) | Server plugin contracts |
+
+## Web plugins
+
+### Scaffold a plugin
+
+Create a plugin project with `@qodalis/create-cli-plugin`, interactively or with flags.
+
+```bash
+npx -y @qodalis/create-cli-plugin@latest --name weather --description "Weather forecasts" --processor-name Weather
+```
+
+Inside a web-cli checkout it creates `packages/plugins/<name>` and adds the path alias to `tsconfig.base.json`; elsewhere it creates a standalone `qodalis-cli-<name>` project, installs its dependencies and builds with `tsup`. The name is lowercase without the `cli-` prefix; the package is `@qodalis/cli-<name>`.
+
+### Command processors
+
+A command is a class implementing `ICliCommandProcessor` from `@qodalis/cli-core`.
+
+```typescript
+import {
+    CliProcessCommand,
+    DefaultLibraryAuthor,
+    ICliCommandProcessor,
+    ICliExecutionContext,
+} from '@qodalis/cli-core';
+
+export class CliGreetCommandProcessor implements ICliCommandProcessor {
+    command = 'greet';
+    description = 'Greets someone';
+    author = DefaultLibraryAuthor;
+    version = '1.0.0';
+    parameters = [
+        { name: 'loud', aliases: ['l'], description: 'Shout', required: false, type: 'boolean' },
+    ];
+
+    async processCommand(command: CliProcessCommand, context: ICliExecutionContext): Promise<void> {
+        const name = command.positionals?.[0] ?? 'world';
+        const text = `Hello, ${name}!`;
+        context.writer.writeln(command.args['loud'] ? text.toUpperCase() : text);
+    }
+}
+```
+
+`command.positionals` holds the arguments split like a shell, `command.args` the flags. Look up every member with `qcli_api ICliCommandProcessor` and `qcli_api CliProcessCommand`.
+
+### Sub-commands
+
+Nest processors in `processors` to build `tool action` style commands.
+
+```typescript
+this.processors = [
+    {
+        command: 'new',
+        description: 'Generate a value',
+        processCommand: async (command, context) => {
+            context.writer.writeln(crypto.randomUUID());
+        },
+    },
+];
+```
+
+The parent's `processCommand` runs when no sub-command matches; it usually prints help.
+
+### Writing output
+
+`context.writer` (`ICliTerminalWriter`) prints text, colours, tables and status lines.
+
+```typescript
+context.writer.writeln('plain line');
+context.writer.writeSuccess('Saved');
+context.writer.writeWarning('Nothing to do');
+context.writer.writeError('Failed');
+```
+
+Use `context.spinner` and `context.progressBar` for long operations and honour `context.signal` so Ctrl+C stops the work.
+
+### Reading input
+
+`context.reader` (`ICliInputReader`) asks the user for text, passwords, confirmations and choices.
+
+```typescript
+const name = await context.reader.readLine('Name: ');
+if (name === null) {
+    return; // cancelled with Ctrl+C or Escape
+}
+const sure = await context.reader.readConfirm('Continue?', true);
+const color = await context.reader.readSelect('Colour', [
+    { label: 'Red', value: 'red' },
+    { label: 'Blue', value: 'blue' },
+]);
+```
+
+Every method resolves to `null` when the user cancels.
+
+### Modules
+
+A plugin exports an `ICliModule` that bundles its processors, services and translations.
+
+```typescript
+import { API_VERSION, ICliModule } from '@qodalis/cli-core';
+import { CliGreetCommandProcessor } from './lib/processors/cli-greet-command-processor';
+
+export const greetModule: ICliModule = {
+    apiVersion: API_VERSION,
+    name: '@qodalis/cli-greet',
+    processors: [new CliGreetCommandProcessor()],
+    translations: {
+        fr: { 'cli.greet.description': 'Salue quelqu’un' },
+    },
+};
+```
+
+Modules whose `apiVersion` is below the runtime's `API_VERSION` are rejected, so use the constant.
+
+### Registering a module
+
+Hosts pass modules to the terminal; there is no processors-only registration.
+
+```typescript
+// Angular
+providers: [resolveCliModuleProvider(greetModule)]
+// React / Vue
+<Cli modules={[greetModule]} />
+// Plain TypeScript
+engine.registerModule(greetModule);
+```
+
+A plugin can also be loaded at runtime from its IIFE bundle (`umd/index.js`), which calls `bootCliModule(module)`.
+
+### Testing
+
+Plugin tests are Jasmine specs in `src/tests/*.spec.ts`.
+
+Run them with `pnpm nx test <name>` inside web-cli (ChromeHeadless, no watch) or with the test script of a standalone project. Test the processor through `processCommand` with a fake execution context, covering invalid input and cancellation.
+
+## Server plugins
+
+### Node.js processor
+
+Server commands extend `CliCommandProcessor` from `@qodalis/cli-server-abstractions` and return text.
+
+```typescript
+import { CliCommandProcessor, CliProcessCommand } from '@qodalis/cli-server-abstractions';
+
+export class GreetProcessor extends CliCommandProcessor {
+    command = 'greet';
+    description = 'Greets someone';
+
+    async handleAsync(command: CliProcessCommand): Promise<string> {
+        return `Hello, ${command.value ?? 'world'}!`;
+    }
+}
+
+const { builder } = createCliServer({});
+builder.addProcessor(new GreetProcessor());
+```
+
+### .NET processor
+
+Server commands derive from `CliCommandProcessor` and implement `HandleAsync`.
+
+```csharp
+public class GreetProcessor : CliCommandProcessor
+{
+    public override string Command { get; set; } = "greet";
+    public override string Description { get; set; } = "Greets someone";
+
+    public override Task<string> HandleAsync(CliProcessCommand command, CancellationToken cancellationToken = default)
+        => Task.FromResult($"Hello, {command.Value ?? "world"}!");
+}
+
+builder.Services.AddCli(cli => cli.AddProcessor<GreetProcessor>());
+```
+
+### Python processor
+
+Server commands subclass `CliCommandProcessor` from `qodalis_cli_server_abstractions`.
+
+```python
+from qodalis_cli_server_abstractions import CliCommandProcessor
+
+
+class GreetProcessor(CliCommandProcessor):
+    command = "greet"
+    description = "Greets someone"
+
+    async def handle_async(self, command, cancellation_event=None) -> str:
+        return f"Hello, {command.value or 'world'}!"
+
+
+builder.add_processor(GreetProcessor())
+```
+
+### Server modules
+
+Group related server processors in a module and register it once.
+
+Node: `builder.addModule(new MyModule())`; Python: `builder.add_module(MyModule())`; .NET: `cli.AddModule(new MyModule())`. A module has a name, a version and its processors.
+
+## Recipes
+
+### Ask before a destructive action
+
+Confirm with `readConfirm` and stop when the answer is not yes.
+
+```typescript
+const ok = await context.reader.readConfirm(`Delete ${file}?`, false);
+if (!ok) {
+    context.writer.writeWarning('Cancelled');
+    return;
+}
+```
+
+### Expose a command to AI assistants
+
+Server commands become MCP tools when the server enables its MCP endpoint.
+
+Enable it with `createCliServer({ mcp: true })` (Node), `CliServerOptions(mcp=True)` (Python) or `cli.AddMcp()` (.NET), then connect Claude Code with `claude mcp add qcli -e QCLI_URL=http://localhost:8047 -e QCLI_TOKEN=<token> -- npx -y @qodalis/mcp-cli`.
