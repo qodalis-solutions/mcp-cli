@@ -46,6 +46,7 @@ const SERVER_LANGUAGES = {
     dotnet: {
         base: 'CliCommandProcessor (Qodalis.Cli) implementing ICliCommandProcessor from Qodalis.Cli.Abstractions',
         handler: 'HandleAsync(CliProcessCommand command, CancellationToken cancellationToken)',
+        docs: '.NET',
         label: '.NET',
         register:
             'register it in Program.cs: `builder.Services.AddCli(cli => cli.AddProcessor<YourProcessor>())` (or group several in a module with `cli.AddModule(...)`)',
@@ -54,6 +55,7 @@ const SERVER_LANGUAGES = {
     node: {
         base: 'CliCommandProcessor from @qodalis/cli-server-abstractions',
         handler: 'handleAsync(command: CliProcessCommand, signal?: AbortSignal): Promise<string>',
+        docs: 'Node',
         label: 'Node.js',
         register:
             'register it with the builder returned by createCliServer(): `builder.addProcessor(new YourProcessor())` (or `builder.addModule(...)`)',
@@ -63,6 +65,7 @@ const SERVER_LANGUAGES = {
         base: 'CliCommandProcessor from qodalis_cli_server_abstractions',
         handler:
             'async def handle_async(self, command: CliProcessCommand, cancellation_event: asyncio.Event | None = None) -> str',
+        docs: 'Python',
         label: 'Python',
         register:
             'register it with the builder of create_cli_server(): `builder.add_processor(YourProcessor())` (or `builder.add_module(...)`)',
@@ -106,7 +109,7 @@ const webPlugin = (
                 '',
                 'Work through these steps, using the qcli_* tools rather than guessing APIs:',
                 '',
-                '1. Learn the plugin model: `qcli_docs_read` with "Web plugins" (the whole section), then `qcli_docs_search` for anything specific to this plugin (arguments, interactive input, output formatting, state, services).',
+                '1. Learn the plugin model: `qcli_docs_read` with "Recipe: a complete web plugin end to end", then `qcli_docs_search` for anything specific to this plugin (parameters, input reader, writer API, state store, services, translations). `qcli_docs_read` with "Web plugins" returns the whole section.',
                 '2. Look up the exact contracts with `qcli_api`: ICliCommandProcessor, CliProcessCommand, ICliExecutionContext, ICliModule, and ICliInputReader if the command asks the user anything. Use the "Related declarations" it lists to go deeper. Do not invent members that are not in the declarations.',
                 `3. ${scaffold}`,
                 `4. Implement the command in src/lib/processors/: set command, description and parameters; do the work in processCommand(command, context), writing output through context.writer; use sub-processors (\`processors\`) for sub-commands; honour context.signal for long work. Keep "${name}" as the command name unless the user says otherwise.`,
@@ -142,7 +145,7 @@ const serverCommand = (args: Record<string, string> | undefined): GetPromptResul
                 '',
                 'Steps (use the qcli_* tools instead of guessing APIs):',
                 '',
-                `1. Read the guide: \`qcli_docs_read\` with "Server plugins", then \`qcli_docs_search\` with "${lang.label} processor" and "${lang.label} module" for the details of this server.`,
+                `1. Read the guide: \`qcli_docs_read\` with "${lang.docs}: minimal server processor" and "${lang.docs}: parameters, sub-commands and modules" (and "Recipe: a server command used from the browser terminal"); \`qcli_docs_search\` "${lang.docs} structured output", "${lang.docs} permissions" or "${lang.docs} testing" when you need them. If a topic is not found, \`qcli_docs_read\` lists the available ones.`,
                 '2. Find where the server is configured in this project (the createCliServer / AddCli / create_cli_server call) and how existing processors are organised; follow the same layout and naming.',
                 `3. Create a processor class deriving from ${lang.base}: set command = "${command}", a description, parameters (name, type, required, description) and the version; implement ${lang.handler}. Use sub-processors for sub-commands.`,
                 `4. ${lang.register.charAt(0).toUpperCase()}${lang.register.slice(1)}.`,
