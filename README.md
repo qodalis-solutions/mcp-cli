@@ -1,17 +1,20 @@
 # @qodalis/mcp-cli
 
-A resilient [Model Context Protocol](https://modelcontextprotocol.io) server that gives
-[Claude Code](https://code.claude.com) the commands, files, data explorer, jobs and plugin tools of a
-[Qodalis CLI](https://cli.qodalis.com) server.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that helps
+[Claude Code](https://code.claude.com) **build [Qodalis CLI](https://cli.qodalis.com) plugins** (docs search, exact API
+declarations, scaffolding) and gives it the commands, files, data explorer, jobs and plugin tools of a running
+Qodalis CLI server through a resilient proxy.
 
 [![npm](https://img.shields.io/npm/v/@qodalis/mcp-cli)](https://www.npmjs.com/package/@qodalis/mcp-cli)
 [![Build & Test](https://github.com/qodalis-solutions/mcp-cli/actions/workflows/build.yml/badge.svg)](https://github.com/qodalis-solutions/mcp-cli/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Every Qodalis CLI server can expose an MCP endpoint at `<server>/api/qcli/mcp`. `mcp-cli` runs on your machine as a
-stdio MCP server and proxies to that endpoint: Claude Code sees exactly the server's tools, with the permissions of
-the account you configure. It handles sign-in, reconnects after network drops and lets you narrow what the assistant
-may use.
+`mcp-cli` runs on your machine as a stdio MCP server in one of two modes:
+
+- **Developer mode** (no `QCLI_URL`): the [plugin-development tools](#plugin-development) only. No server needed.
+- **Server mode** (`QCLI_URL` set): the same tools plus a proxy to the server's MCP endpoint
+  (`<server>/api/qcli/mcp`): Claude Code sees exactly the server's tools, with the permissions of the account you
+  configure. It handles sign-in, reconnects after network drops and lets you narrow what the assistant may use.
 
 ## Where it fits
 
@@ -25,6 +28,9 @@ may use.
 
 ## Highlights
 
+- **Plugin development built in.** Search the plugin guide, read the exact
+  TypeScript declarations of `@qodalis/cli-core` and scaffold a plugin, with
+  prompts that walk the assistant through a web plugin or a server command.
 - **No tool-specific code.** Tools come from the server's `tools/list` and are
   passed through unchanged (names, schemas, annotations); calls are forwarded.
   New commands on the server show up without updating the proxy.
@@ -42,6 +48,17 @@ may use.
   permission or an unreachable host each come back as one actionable sentence.
 
 ## Quick start
+
+For plugin development, nothing else is needed:
+
+```bash
+claude mcp add qcli -- npx -y @qodalis/mcp-cli
+```
+
+Then ask, for example, _"Create a Qodalis CLI plugin that converts temperatures"_ or run the
+`/mcp__qcli__create-web-plugin` prompt. See [Plugin development](#plugin-development).
+
+To also reach a running server, add `QCLI_URL` and credentials as described below.
 
 ```bash
 npx -y @qodalis/mcp-cli --help
@@ -107,7 +124,7 @@ file works too:
 { "command": "npx", "args": ["-y", "@qodalis/mcp-cli", "--env-file", "/path/to/.env"] }
 ```
 
-Pin a version in shared configs (`@qodalis/mcp-cli@0.1.0`) so an upgrade is a
+Pin a version in shared configs (`@qodalis/mcp-cli@0.2.0`) so an upgrade is a
 deliberate change.
 
 ### Getting a token
@@ -135,24 +152,87 @@ A server **without** the users plugin protects its endpoint with a static token
 (its `mcp.token` option): put that value in `QCLI_TOKEN`. If it sets none, the
 endpoint is open and no auth variable is needed.
 
+## Plugin development
+
+These tools are served locally and work without a server (developer mode) or next to
+a server's tools. Turn them off with `QCLI_DEV_TOOLS=false`.
+
+```bash
+claude mcp add qcli -- npx -y @qodalis/mcp-cli                 # developer mode
+claude mcp add qcli --scope user -- npx -y @qodalis/mcp-cli    # in every project
+```
+
+### Tools
+
+| Tool                   | Arguments                                              | What it does                                                                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `qcli_docs_search`     | `query`, `limit?` (default 5, max 20)                  | Ranked topics of the plugin guide as `Section › Topic`, with their summary and an excerpt.                                                                                                                                      |
+| `qcli_docs_read`       | `topic`                                                | A topic in full (heading match, case-insensitive; `Section › Topic` when a heading is in several sections), or a whole section (`Web plugins`). Lists the topics when nothing matches.                                          |
+| `qcli_api`             | `symbol`, `package?` (default `@qodalis/cli-core`)     | The TypeScript declaration of an interface, type, class, function, enum or constant, with its JSDoc and the related declarations to look up next. `package` takes any `@qodalis/*` package (`cli` is short for `@qodalis/cli`). |
+| `qcli_scaffold_plugin` | `name`, `description?`, `processorName?`, `directory?` | Runs `npx -y @qodalis/create-cli-plugin@latest` and returns the created files and next steps. Inside a web-cli checkout it creates `packages/plugins/<name>`; elsewhere a standalone `qodalis-cli-<name>` project.              |
+
+Where the data comes from:
+
+- **Docs**: [`https://cli.qodalis.com/llms-full.txt`](https://cli.qodalis.com/llms-full.txt)
+  (`QCLI_DOCS_URL`), cached for an hour. When it cannot be fetched, the last
+  download is reused, else the snapshot bundled in the package
+  (`docs/llms-full.txt`), so the tools work offline.
+- **API declarations**: the project's `node_modules` (the MCP server's working
+  directory and its parents) when the package is installed there, so the answer
+  matches the version you build against. Otherwise the `latest` version on npm,
+  downloaded from jsDelivr (unpkg as fallback) and cached in memory and in
+  `<tmp>/qodalis-mcp-cli`; offline, the newest cached version is used.
+- **Scaffolding**: validates the name (lowercase letters, digits and hyphens, no
+  `cli-` prefix), refuses an existing target directory, runs without a TTY and
+  stops after 5 minutes. The standalone project installs its dependencies.
+
+### Prompts
+
+| Prompt                  | Arguments                                          | Walks the assistant through                                                                                                             |
+| ----------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `create-web-plugin`     | `name`, `description`                              | Reading the guide, looking up the contracts with `qcli_api`, scaffolding, implementing the processor and module, tests, registering it. |
+| `create-server-command` | `language` (`node`, `dotnet`, `python`), `command` | Adding a command processor to a Node, .NET or Python server, registering it and testing it.                                             |
+
+In Claude Code they appear as `/mcp__qcli__create-web-plugin` and
+`/mcp__qcli__create-server-command`. The docs topics are also MCP resources
+(`qcli-docs://<section>/<topic>`), which Claude Code can attach with `@`.
+
+### Example requests
+
+- _"Search the Qodalis plugin docs for reading user input."_ → `qcli_docs_search`
+- _"Show me ICliExecutionContext."_ → `qcli_api { "symbol": "ICliExecutionContext" }`
+- _"Which options does CliEngine take?"_ → `qcli_api { "symbol": "CliEngine", "package": "cli" }`
+- _"Scaffold a plugin called json-tools."_ → `qcli_scaffold_plugin { "name": "json-tools" }`
+
+### Filters and read-only mode
+
+The dev tools are tools like any other: `QCLI_TOOLS` and `QCLI_EXCLUDE` apply to
+them (`QCLI_EXCLUDE=qcli_scaffold_plugin`, or `QCLI_TOOLS=qcli_*` for the dev
+tools alone), and `QCLI_READ_ONLY=true` hides and refuses `qcli_scaffold_plugin`
+(the docs and API tools are read-only). A server tool with the same name as a dev
+tool is hidden. When the server is unreachable, `tools/list` still returns the
+dev tools.
+
 ## Configuration
 
 Every setting is an environment variable. `QODALIS_CLI_*` names are accepted as
 aliases for every key.
 
-| Variable                  | Default  | Description                                                                                        |
-| ------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `QCLI_URL`                | required | Server base URL, e.g. `https://cli.example.com` (a pasted `…/api/qcli/mcp` URL is accepted).       |
-| `QCLI_TOKEN`              | none     | API token (`token create` in the web CLI) or the server's static `mcp.token`.                      |
-| `QCLI_USER`               | none     | Sign in with this user name instead of a token (needs `QCLI_PASSWORD`).                            |
-| `QCLI_PASSWORD`           | none     | Password for `QCLI_USER`. Never logged.                                                            |
-| `QCLI_READ_ONLY`          | `false`  | Expose and allow only tools annotated `readOnlyHint: true`. See [read-only mode](#read-only-mode). |
-| `QCLI_TOOLS`              | all      | Comma-separated allow-list of tool names; a trailing `*` matches a prefix (`fs_*`).                |
-| `QCLI_EXCLUDE`            | none     | Comma-separated deny-list, same syntax, applied after `QCLI_TOOLS`.                                |
-| `QCLI_CONNECTION_TIMEOUT` | `8000`   | Milliseconds to wait for the TCP/TLS connection before reporting the server unreachable.           |
-| `QCLI_REQUEST_TIMEOUT`    | `60000`  | Milliseconds a single request (`tools/list`, `tools/call`) may take.                               |
-| `QCLI_TRUST_CERT`         | `false`  | Accept a self-signed TLS certificate.                                                              |
-| `QCLI_ENV_FILE`           | none     | Path to a `.env` file (same as `--env-file`). Variables already set in the environment win.        |
+| Variable                  | Default                                 | Description                                                                                                              |
+| ------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `QCLI_URL`                | none                                    | Server base URL, e.g. `https://cli.example.com` (a pasted `…/api/qcli/mcp` URL is accepted). Without it: developer mode. |
+| `QCLI_TOKEN`              | none                                    | API token (`token create` in the web CLI) or the server's static `mcp.token`.                                            |
+| `QCLI_USER`               | none                                    | Sign in with this user name instead of a token (needs `QCLI_PASSWORD`).                                                  |
+| `QCLI_PASSWORD`           | none                                    | Password for `QCLI_USER`. Never logged.                                                                                  |
+| `QCLI_READ_ONLY`          | `false`                                 | Expose and allow only tools annotated `readOnlyHint: true`. See [read-only mode](#read-only-mode).                       |
+| `QCLI_TOOLS`              | all                                     | Comma-separated allow-list of tool names; a trailing `*` matches a prefix (`fs_*`).                                      |
+| `QCLI_EXCLUDE`            | none                                    | Comma-separated deny-list, same syntax, applied after `QCLI_TOOLS`.                                                      |
+| `QCLI_CONNECTION_TIMEOUT` | `8000`                                  | Milliseconds to wait for the TCP/TLS connection before reporting the server unreachable.                                 |
+| `QCLI_REQUEST_TIMEOUT`    | `60000`                                 | Milliseconds a single request (`tools/list`, `tools/call`) may take.                                                     |
+| `QCLI_TRUST_CERT`         | `false`                                 | Accept a self-signed TLS certificate.                                                                                    |
+| `QCLI_ENV_FILE`           | none                                    | Path to a `.env` file (same as `--env-file`). Variables already set in the environment win.                              |
+| `QCLI_DEV_TOOLS`          | `true`                                  | The `qcli_*` plugin-development tools, prompts and docs resources. `false` requires `QCLI_URL`.                          |
+| `QCLI_DOCS_URL`           | `https://cli.qodalis.com/llms-full.txt` | Where the plugin guide is fetched from (falls back to the bundled snapshot).                                             |
 
 Set either `QCLI_TOKEN` or `QCLI_USER` + `QCLI_PASSWORD`, not both.
 
@@ -236,7 +316,8 @@ shows its status and tools and lets you reconnect. The proxy logs to stderr
 | `Cannot reach … Check QCLI_URL / VPN.`                                        | The server is down, the URL or port is wrong, or the VPN is disconnected. Retry the call once it is back: the proxy reconnects by itself.                 |
 | `… did not answer within 60000 ms`                                            | A slow command; raise `QCLI_REQUEST_TIMEOUT`.                                                                                                             |
 | A tool is missing                                                             | The account (or token scope) lacks its permission, the feature is not enabled on the server, or `QCLI_READ_ONLY` / `QCLI_TOOLS` / `QCLI_EXCLUDE` hide it. |
-| `QCLI_URL … is required` at startup                                           | The `env` block is missing or the variable name is misspelled; `npx -y @qodalis/mcp-cli --help` lists every variable.                                     |
+| `Nothing to serve: set QCLI_URL …` at startup                                 | `QCLI_DEV_TOOLS=false` without `QCLI_URL`: set the URL (check the variable name; `npx -y @qodalis/mcp-cli --help` lists every variable).                  |
+| Only the `qcli_*` tools are listed                                            | No `QCLI_URL` (developer mode), or the server is unreachable: the log says which.                                                                         |
 
 ## How reconnection works
 
@@ -276,6 +357,15 @@ const remote = new RemoteServer(config, { clientInfo: { name: 'my-app', version:
 const server = createProxyServer(remote, config); // a low-level MCP Server: connect any transport
 ```
 
+With the plugin-development tools (`remote` may be `undefined` for developer mode):
+
+```ts
+import { createProxyServer, DevTools, loadConfig } from '@qodalis/mcp-cli';
+
+const config = loadConfig(process.env);
+const server = createProxyServer(undefined, config, { dev: new DevTools(config) });
+```
+
 ## Development
 
 ```bash
@@ -285,6 +375,7 @@ npm test             # unit tests and stdio end-to-end tests against a fake serv
 npm run typecheck
 npm run check-format
 npm run dev -- --env-file .env   # run from source
+npm run sync-docs                # refresh docs/llms-full.txt (from ../web-cli, a path/URL argument, or the site)
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

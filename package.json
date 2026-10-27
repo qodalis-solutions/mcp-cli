@@ -1,7 +1,7 @@
 {
     "name": "@qodalis/mcp-cli",
-    "version": "0.1.0",
-    "description": "Model Context Protocol (MCP) server for Qodalis CLI servers: gives Claude Code the server's commands, files, data explorer and jobs through a resilient stdio proxy to the server's MCP endpoint.",
+    "version": "0.2.0",
+    "description": "Model Context Protocol (MCP) server for Qodalis CLI: plugin-development tools (docs search, API declarations, scaffolding) for AI assistants, and a resilient stdio proxy to a Qodalis CLI server's commands, files, data explorer and jobs.",
     "type": "module",
     "main": "dist/src/index.js",
     "types": "dist/src/index.d.ts",
@@ -10,6 +10,7 @@
     },
     "files": [
         "dist/src",
+        "docs/llms-full.txt",
         "LICENSE",
         "README.md",
         "CHANGELOG.md"
@@ -27,7 +28,8 @@
         "test:coverage": "vitest run --coverage",
         "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.md\" \"vitest.config.ts\"",
         "check-format": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"vitest.config.ts\"",
-        "prepublishOnly": "npm run clean && npm run build"
+        "prepublishOnly": "npm run clean && npm run build",
+        "sync-docs": "node scripts/sync-docs.mjs"
     },
     "keywords": [
         "mcp",
@@ -37,7 +39,8 @@
         "claude",
         "claude-code",
         "ai",
-        "proxy"
+        "proxy",
+        "plugin-development"
     ],
     "author": "Nicolae Lupei <nicolae.lupei@qodalis.com>",
     "license": "MIT",
