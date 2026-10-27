@@ -1,14 +1,27 @@
 # @qodalis/mcp-cli
 
-A resilient [Model Context Protocol](https://modelcontextprotocol.io) server that
-gives [Claude Code](https://code.claude.com) a [Qodalis CLI](https://cli.qodalis.com)
-server: its CLI commands, files, data explorer, jobs and plugin tools.
+A resilient [Model Context Protocol](https://modelcontextprotocol.io) server that gives
+[Claude Code](https://code.claude.com) the commands, files, data explorer, jobs and plugin tools of a
+[Qodalis CLI](https://cli.qodalis.com) server.
 
-Every Qodalis CLI server (.NET, Node or Python) can expose an MCP endpoint at
-`<server>/api/qcli/mcp`. `mcp-cli` runs on your machine as a stdio MCP server
-and proxies to that endpoint: Claude Code sees exactly the server's tools, with
-the permissions of the account you configure. It handles sign-in, reconnects
-after network drops and lets you narrow what the assistant may use.
+[![npm](https://img.shields.io/npm/v/@qodalis/mcp-cli)](https://www.npmjs.com/package/@qodalis/mcp-cli)
+[![Build & Test](https://github.com/qodalis-solutions/mcp-cli/actions/workflows/build.yml/badge.svg)](https://github.com/qodalis-solutions/mcp-cli/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+Every Qodalis CLI server can expose an MCP endpoint at `<server>/api/qcli/mcp`. `mcp-cli` runs on your machine as a
+stdio MCP server and proxies to that endpoint: Claude Code sees exactly the server's tools, with the permissions of
+the account you configure. It handles sign-in, reconnects after network drops and lets you narrow what the assistant
+may use.
+
+## Where it fits
+
+| Repository                                                                                                                                                                                                                        | Role                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [web-cli](https://github.com/qodalis-solutions/web-cli)                                                                                                                                                                           | The browser terminal (Angular, React, Vue) and its plugins, including `token create` for API tokens |
+| [cli-server-node](https://github.com/qodalis-solutions/cli-server-node), [cli-server-dotnet](https://github.com/qodalis-solutions/cli-server-dotnet), [cli-server-python](https://github.com/qodalis-solutions/cli-server-python) | The servers that host the MCP endpoint                                                              |
+| [cli-server-dashboard](https://github.com/qodalis-solutions/cli-server-dashboard)                                                                                                                                                 | Admin dashboard served by the servers                                                               |
+| [pwa-cli](https://github.com/qodalis-solutions/pwa-cli)                                                                                                                                                                           | The CLI as a PWA and Android app                                                                    |
+| **mcp-cli**                                                                                                                                                                                                                       | This repository: the bridge from Claude Code to a server                                            |
 
 ## Highlights
 
@@ -34,9 +47,16 @@ after network drops and lets you narrow what the assistant may use.
 npx -y @qodalis/mcp-cli --help
 ```
 
-The server must have MCP enabled (`mcp` option; see
-[MCP endpoint](https://cli.qodalis.com/docs/server-integration#mcp-endpoint)).
-Default ports: .NET `8046`, Node `8047`, Python `8048`.
+The server must have MCP enabled (default ports: .NET `8046`, Node `8047`, Python `8048`):
+
+| Server | Enable MCP                                     |
+| ------ | ---------------------------------------------- |
+| Node   | `createCliServer({ mcp: true })`               |
+| Python | `CliServerOptions(mcp=True)`                   |
+| .NET   | `builder.Services.AddCli(cli => cli.AddMcp())` |
+
+Each also takes options (tool allow/deny lists, a static token, instructions); see
+[MCP endpoint](https://cli.qodalis.com/docs/server-integration#mcp-endpoint).
 
 ### Claude Code
 
