@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { ConfigError, describeConfig, ENV_FILE_VARIABLES, loadConfig } from './config.js';
+import { DevTools } from './dev/tools.js';
 import { applyEnvFile } from './env-file.js';
 import { RemoteServer } from './remote.js';
 import { createProxyServer, SERVER_NAME, SERVER_VERSION } from './server.js';
 
 const SHUTDOWN_GRACE_MS = 5000;
 
-const usage = `Proxies Claude Code (or any MCP client) to a Qodalis CLI server's MCP endpoint
-(<QCLI_URL>/api/qcli/mcp). Configuration is read from the environment (QCLI_* or
-QODALIS_CLI_* names):
-  QCLI_URL (required)              server base URL, e.g. http://localhost:8047
+const usage = `Plugin-development tools for Qodalis CLI (docs search, API declarations, plugin
+scaffolding) and a proxy to a Qodalis CLI server's MCP endpoint (<QCLI_URL>/api/qcli/mcp).
+Without QCLI_URL it runs in developer mode: only the plugin-development tools.
+Configuration is read from the environment (QCLI_* or QODALIS_CLI_* names):
+  QCLI_URL                         server base URL, e.g. http://localhost:8047 (optional)
   QCLI_TOKEN                       API token (token create in the web CLI) or the server's mcp token
   QCLI_USER, QCLI_PASSWORD         sign in with a password instead (signs in again on 401)
   QCLI_READ_ONLY (false)           only tools the server marks read-only
@@ -19,6 +21,8 @@ QODALIS_CLI_* names):
   QCLI_CONNECTION_TIMEOUT (8000 ms)  QCLI_REQUEST_TIMEOUT (60000 ms)
   QCLI_TRUST_CERT (false)          accept a self-signed TLS certificate
   QCLI_ENV_FILE                    path to a .env file (same as --env-file)
+  QCLI_DEV_TOOLS (true)            the qcli_* plugin-development tools, prompts and docs resources
+  QCLI_DOCS_URL                    plugin docs (default https://cli.qodalis.com/llms-full.txt)
 `;
 
 const log = (message: string): void => {
@@ -66,14 +70,22 @@ const main = (): void => {
         if (config.trustCert) {
             log('QCLI_TRUST_CERT=true: TLS certificates are not verified');
         }
-        const remote = new RemoteServer(config, {
-            clientInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-            log,
-        });
-        const handle = serveStdio(() => createProxyServer(remote, config), {
+        if (!config.url && config.auth.kind !== 'none') {
+            log('QCLI_TOKEN / QCLI_USER are set but QCLI_URL is not: no server is used');
+        }
+        const remote = config.url
+            ? new RemoteServer(config, {
+                  clientInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+                  log,
+              })
+            : undefined;
+        const dev = config.devTools ? new DevTools(config, { log }) : undefined;
+        const handle = serveStdio(() => createProxyServer(remote, config, { dev, log }), {
             onerror: (error) => log(`transport error: ${error.message}`),
         });
-        log(`v${SERVER_VERSION} ready for ${describeConfig(config)}; connects on first use`);
+        log(
+            `v${SERVER_VERSION} ready for ${describeConfig(config)}${remote ? '; connects on first use' : ''}`,
+        );
 
         let shuttingDown = false;
         const shutdown = async (reason: string): Promise<void> => {
@@ -84,7 +96,7 @@ const main = (): void => {
             log(`shutting down (${reason})`);
             setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref();
             await handle.close().catch(() => undefined);
-            await remote.close();
+            await remote?.close();
             process.exit(0);
         };
         process.once('SIGINT', () => void shutdown('SIGINT'));

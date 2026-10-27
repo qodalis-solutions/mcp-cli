@@ -1,0 +1,63 @@
+import { Observable } from 'rxjs';
+export * from './extra';
+
+/**
+ * A parsed command.
+ */
+type CliProcessCommand = {
+    /** The command, e.g. `{ not a brace }` */
+    command: string;
+    args: Record<string, any>;
+};
+
+/**
+ * Processes a command. Use {@link CliProcessCommand}.
+ */
+interface ICliCommandProcessor {
+    command: string;
+    /**
+     * Runs the command; braces in comments { do not count.
+     */
+    processCommand(command: CliProcessCommand, context: ICliExecutionContext): Promise<void>;
+    processors?: ICliCommandProcessor[];
+    format?: '}' | "{";
+}
+
+interface ICliExecutionContext {
+    writer: { writeln(text?: string): void };
+    onChange: Observable<string>;
+}
+
+/** Overloaded. */
+declare function parse(value: string): CliProcessCommand;
+declare function parse(value: string, strict: boolean): CliProcessCommand;
+
+declare enum CliColor {
+    Red = "red",
+    Blue = "blue"
+}
+
+declare const DefaultAuthor: {
+    name: string;
+};
+
+/** A class. */
+declare abstract class CliBase<T extends object = {}> implements ICliCommandProcessor {
+    command: string;
+    protected handle(): (x: number) => Promise<T>;
+    processCommand(command: CliProcessCommand, context: ICliExecutionContext): Promise<void>;
+}
+
+type Callback = (value: string) => void
+
+interface Merged {
+    a: string;
+}
+interface Merged {
+    b: number;
+}
+
+declare const internalModule: { name: string };
+
+export { CliBase, CliColor, CliProcessCommand, DefaultAuthor, ICliCommandProcessor, ICliExecutionContext, Merged, parse, internalModule as publicModule };
+export type { Callback };

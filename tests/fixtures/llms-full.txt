@@ -1,0 +1,61 @@
+# Qodalis CLI plugin development
+
+Intro text before the first section is ignored.
+
+## Overview
+
+Section intro.
+
+### Architecture
+
+Commands are processors registered through modules.
+
+The engine parses each line and calls `processCommand`.
+
+## Web plugins
+
+### Command processors
+
+A command is a class implementing ICliCommandProcessor.
+
+```typescript
+// ## not a heading inside a fence
+### also not a heading
+class CliGreetCommandProcessor implements ICliCommandProcessor {
+    command = 'greet';
+}
+```
+
+Use `context.writer` to print output.
+
+### Reading input
+
+The input reader asks the user for text, passwords and confirmations.
+
+```typescript
+const name = await context.reader.readLine('Name: ');
+```
+
+### Testing
+
+Web plugin tests are Jasmine specs.
+
+Run them with pnpm nx test.
+
+## Server plugins
+
+### Node.js processor
+
+Server commands extend CliCommandProcessor and return text.
+
+Register with builder.addProcessor.
+
+### Testing
+
+Server tests use vitest, xUnit or pytest.
+
+## Recipes
+
+### Ask before a destructive action
+
+Confirm with readConfirm before deleting anything.
