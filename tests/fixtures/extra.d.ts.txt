@@ -1,0 +1,4 @@
+/** From a second file. */
+export interface ICliExtra {
+    extra: boolean;
+}

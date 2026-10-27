@@ -7,6 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startFakeServer, type FakeServer } from '../helpers/fake-qcli-server.js';
 
 const CLI = path.resolve(import.meta.dirname, '../../dist/src/cli.js');
+const DEV_TOOLS = ['qcli_docs_search', 'qcli_docs_read', 'qcli_api', 'qcli_scaffold_plugin'];
+/** A docs URL that refuses connections, so the bundled snapshot is used offline. */
+const OFFLINE_DOCS = { QCLI_DOCS_URL: 'http://127.0.0.1:9/llms-full.txt' };
 
 /** Spawns the built `mcp-cli` over stdio with the given environment and connects a client. */
 const connect = async (
@@ -43,6 +46,7 @@ describe.skipIf(!existsSync(CLI))('mcp-cli over stdio (run `npm run build` first
             expect(client.getServerVersion()?.name).toBe('@qodalis/mcp-cli');
             const { tools } = await client.listTools();
             expect(tools.map((t) => t.name)).toEqual([
+                ...DEV_TOOLS,
                 'server_info',
                 'echo',
                 'fs_list',
@@ -72,12 +76,48 @@ describe.skipIf(!existsSync(CLI))('mcp-cli over stdio (run `npm run build` first
         const { client, stderr } = await connect({ QCLI_ENV_FILE: envFile });
         try {
             const { tools } = await client.listTools();
-            expect(tools.map((t) => t.name)).toEqual(['server_info', 'fs_list']);
+            expect(tools.map((t) => t.name)).toEqual([
+                'qcli_docs_search',
+                'qcli_docs_read',
+                'qcli_api',
+                'server_info',
+                'fs_list',
+            ]);
             expect(stderr()).toContain('signs in as root; read-only tools');
             expect(stderr()).not.toContain('secret');
         } finally {
             await client.close();
         }
+    });
+
+    it('runs in developer mode without QCLI_URL, serving the bundled docs', async () => {
+        const { client, stderr } = await connect(OFFLINE_DOCS);
+        try {
+            const { tools } = await client.listTools();
+            expect(tools.map((t) => t.name)).toEqual(DEV_TOOLS);
+            const search = await client.callTool({
+                arguments: { query: 'register module' },
+                name: 'qcli_docs_search',
+            });
+            expect(search.isError).toBeFalsy();
+            expect((search.content as Array<{ text: string }>)[0]!.text).toContain(
+                'source: bundled snapshot',
+            );
+            const { prompts } = await client.listPrompts();
+            expect(prompts.map((p) => p.name)).toEqual([
+                'create-web-plugin',
+                'create-server-command',
+            ]);
+            expect((await client.listResources()).resources.length).toBeGreaterThan(5);
+            expect(stderr()).toContain('ready for developer mode');
+            expect(stderr()).toContain('using the bundled snapshot');
+        } finally {
+            await client.close();
+        }
+    });
+
+    it('fails at startup when there is nothing to serve', async () => {
+        await expect(connect({ QCLI_DEV_TOOLS: 'false' })).rejects.toThrow();
     });
 
     it('reports an unreachable server in the tool result', async () => {

@@ -7,7 +7,7 @@ import {
     type FetchLike,
 } from '@modelcontextprotocol/client';
 import { Agent, fetch as undiciFetch } from 'undici';
-import type { Config } from './config.js';
+import { ConfigError, type Config } from './config.js';
 import {
     classify,
     httpStatus,
@@ -66,11 +66,17 @@ export class RemoteServer {
     private readonly closeFetch: () => Promise<void>;
     private readonly log: (message: string) => void;
     private readonly now: () => number;
+    /** `config.url`, required to talk to a server */
+    private readonly url: string;
 
     constructor(
         private readonly config: Config,
         private readonly options: RemoteOptions,
     ) {
+        if (!config.url) {
+            throw new ConfigError('QCLI_URL is required to connect to a Qodalis CLI server.');
+        }
+        this.url = config.url;
         if (options.fetch) {
             this.fetchFn = options.fetch;
             this.closeFetch = async () => undefined;
@@ -137,7 +143,7 @@ export class RemoteServer {
         await client?.close().catch(() => undefined);
         if (this.sessionToken) {
             // End the password session we opened (best effort)
-            await this.fetchFn(`${this.config.url}${SESSIONS_PATH}/current`, {
+            await this.fetchFn(`${this.url}${SESSIONS_PATH}/current`, {
                 headers: { Authorization: `Bearer ${this.sessionToken}` },
                 method: 'DELETE',
                 signal: AbortSignal.timeout(2000),
@@ -193,13 +199,10 @@ export class RemoteServer {
 
     private async open(): Promise<Client> {
         const token = await this.bearerToken();
-        const transport = new StreamableHTTPClientTransport(
-            new URL(`${this.config.url}${MCP_PATH}`),
-            {
-                fetch: this.fetchFn,
-                requestInit: { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-            },
-        );
+        const transport = new StreamableHTTPClientTransport(new URL(`${this.url}${MCP_PATH}`), {
+            fetch: this.fetchFn,
+            requestInit: { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        });
         const client = new Client(this.options.clientInfo);
         try {
             await client.connect(transport, { timeout: this.config.connectionTimeoutMs });
@@ -208,7 +211,7 @@ export class RemoteServer {
             throw error;
         }
         const info = client.getServerVersion();
-        this.log(`connected to ${this.config.url}${info ? ` (${info.name} ${info.version})` : ''}`);
+        this.log(`connected to ${this.url}${info ? ` (${info.name} ${info.version})` : ''}`);
         this.client = client;
         return client;
     }
@@ -233,7 +236,7 @@ export class RemoteServer {
 
     /** POST /api/v1/qcli/sessions with QCLI_USER / QCLI_PASSWORD. */
     private async signIn(user: string, password: string): Promise<string> {
-        const response = await this.fetchFn(`${this.config.url}${SESSIONS_PATH}`, {
+        const response = await this.fetchFn(`${this.url}${SESSIONS_PATH}`, {
             body: JSON.stringify({ password, username: user }),
             headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
             method: 'POST',
@@ -242,19 +245,19 @@ export class RemoteServer {
         if (response.status === 401 || response.status === 400 || response.status === 403) {
             throw new RemoteError(
                 'login',
-                `${this.config.url} rejected QCLI_USER / QCLI_PASSWORD for "${user}" (${response.status}${errorText(text)}).`,
+                `${this.url} rejected QCLI_USER / QCLI_PASSWORD for "${user}" (${response.status}${errorText(text)}).`,
             );
         }
         if (response.status === 404) {
             throw new RemoteError(
                 'login',
-                `${this.config.url} has no users plugin (404 on ${SESSIONS_PATH}): use QCLI_TOKEN with the server's mcp token instead of QCLI_USER / QCLI_PASSWORD.`,
+                `${this.url} has no users plugin (404 on ${SESSIONS_PATH}): use QCLI_TOKEN with the server's mcp token instead of QCLI_USER / QCLI_PASSWORD.`,
             );
         }
         if (response.status === 429) {
             throw new RemoteError(
                 'login',
-                `${this.config.url}: too many failed sign-ins for "${user}"; try again later.`,
+                `${this.url}: too many failed sign-ins for "${user}"; try again later.`,
             );
         }
         if (!response.ok) {
@@ -265,9 +268,9 @@ export class RemoteServer {
         }
         const token = (JSON.parse(text) as { token?: unknown }).token;
         if (typeof token !== 'string' || !token) {
-            throw new RemoteError('login', `${this.config.url} did not return a session token.`);
+            throw new RemoteError('login', `${this.url} did not return a session token.`);
         }
-        this.log(`signed in to ${this.config.url} as ${user}`);
+        this.log(`signed in to ${this.url} as ${user}`);
         return token;
     }
 
@@ -276,7 +279,7 @@ export class RemoteServer {
             auth: this.config.auth.kind,
             connectionTimeoutMs: this.config.connectionTimeoutMs,
             requestTimeoutMs: this.config.requestTimeoutMs,
-            url: this.config.url,
+            url: this.url,
         };
     }
 }
