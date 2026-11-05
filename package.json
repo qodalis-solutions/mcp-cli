@@ -1,6 +1,6 @@
 {
     "name": "@qodalis/mcp-cli",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "description": "Model Context Protocol (MCP) server for Qodalis CLI: plugin-development tools (docs search, API declarations, scaffolding) for AI assistants, and a resilient stdio proxy to a Qodalis CLI server's commands, files, data explorer and jobs.",
     "type": "module",
     "main": "dist/src/index.js",
