@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.4] - 2026-11-05
+
+### Changed
+
+- Bundled plugin guide (`docs/llms-full.txt`) refreshed for the servers' 1.0.0-beta.18: the logs API's filters
+  (several levels, service, time range) and the .NET Seq logs plugin (`Qodalis.Cli.Plugin.Logs.Seq`).
+
 ## [0.2.3] - 2026-11-05
 
 ### Changed
