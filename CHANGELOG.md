@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-11-05
+
+### Changed
+
+- Bundled plugin guide (`docs/llms-full.txt`) refreshed for the servers' 1.0.0-beta.15: inside a
+  job (run properties, discard, a service scope per run in .NET), stable job ids, run on start,
+  executions across jobs and pruning; the audit log (target, properties, actor and offset
+  filters, the .NET EF Core store); the installed plugins list. For all three servers.
+
 ## [0.2.1] - 2026-11-05
 
 ### Changed
