@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-05
+
+### Changed
+
+- Bundled plugin guide (`docs/llms-full.txt`) refreshed from web-cli 2.1.0: the CLI's
+  `branding` option (name and icon), .NET jobs that run elsewhere (`ICliJobManager`,
+  `SetJobManager`), the admin dashboard's name and icon on all three servers, and the
+  opt-in filesystem API.
+
 ## [0.2.0] - 2026-10-27
 
 ### Added

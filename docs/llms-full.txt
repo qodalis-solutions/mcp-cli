@@ -1,6 +1,6 @@
 # Qodalis CLI plugin development
 
-> Reference for writing Qodalis CLI plugins: browser (web) plugins that run in the terminal UI, and server plugins for the Node.js, .NET and Python CLI servers. Every topic is self-contained. Version 2.0 (web packages `2.0.0-rc.1`). Source: https://github.com/qodalis-solutions/web-cli. Docs: https://cli.qodalis.com.
+> Reference for writing Qodalis CLI plugins: browser (web) plugins that run in the terminal UI, and server plugins for the Node.js, .NET and Python CLI servers. Every topic is self-contained. Version 2.0. Source: https://github.com/qodalis-solutions/web-cli. Docs: https://cli.qodalis.com.
 
 ## Overview
 
@@ -30,6 +30,18 @@ The npm, NuGet and PyPI packages a plugin author uses, by role.
 | `Qodalis.Cli.Abstractions` (NuGet) | .NET server plugin API. Server: `Qodalis.Cli`. |
 | `qodalis-cli-server-abstractions` (PyPI, import `qodalis_cli_server_abstractions`) | Python server plugin API. Server: `qodalis-cli-server` (import `qodalis_cli`). |
 | `@qodalis/mcp-cli` | MCP server for AI assistants: docs search, API lookup, plugin scaffolding, and (with `QCLI_URL`) driving a CLI server. |
+
+### Shipping the CLI under your own name
+
+`CliOptions.branding` sets the name and icon an application ships the CLI under. Anything left out keeps Qodalis CLI's.
+
+```tsx
+<CliPanel options={{ branding: { name: 'RateBell CLI', icon: '/favicon.svg' }, servers: [...] }} />
+```
+
+- `name` replaces "Web CLI" and the Qodalis CLI art in the welcome banner and the startup log, and "CLI" in the panel's header and hide tab (React, Vue, Angular).
+- `icon` (an image URL: http(s), a path, or a `data:image` URL) replaces the panel's terminal glyph.
+- The copyright line, the documentation link and `version` stay Qodalis CLI's; `version` adds the name as an `App` row.
 
 ## Web plugins
 
@@ -154,6 +166,7 @@ All members:
 | `onData?(data, context)` | `Promise<void>` | Raw terminal input while this processor is the context processor (full-screen apps). |
 | `onResize?(cols, rows, context)` | `void` | Terminal resized while in full-screen mode. |
 | `onDispose?(context)` | `void` | Full-screen mode ended, terminal disconnected or component destroyed. |
+| `controls?` | `ICliCommandControls` | Keys a full-screen command reads, so touch hosts can show them as buttons (see below). |
 
 Execution order for one command: parse -> find processor -> global parameter handlers (`--help`, ...) -> extract `value`/`positionals` -> command guards -> `valueRequired` check -> required-parameter and `validator` checks -> `validateBeforeExecution` -> `before` hooks -> `processCommand` -> `after` hooks.
 
@@ -621,6 +634,32 @@ export class CliClockCommandProcessor implements ICliCommandProcessor {
 - `onData` receives raw sequences: arrows `\x1b[A`/`\x1b[B`/`\x1b[C`/`\x1b[D`, Enter `\r`, Backspace `\x7f`, Escape `\x1b`, Ctrl+C `\x03` (passed through in full-screen mode).
 - Pass `{ showCursor: true }` for REPL-style UIs.
 
+### Touch keys for full-screen commands (controls)
+
+A full-screen command lists the keys it reads in `controls`, so phones (which have no Ctrl, Esc or arrow keys) can show them as buttons.
+
+Hosts on touch screens (the Qodalis CLI phone app) show them as buttons while the command runs and send each key's `data` to `onData`; help screens can list them.
+
+```typescript
+import { CliKeyData, ICliCommandControls } from '@qodalis/cli-core';
+
+controls: ICliCommandControls = {
+    keys: [
+        { label: 'ESC', key: 'Esc', data: CliKeyData.escape, description: 'Quit' },
+        { label: 'PAUSE', key: 'Space', data: CliKeyData.space, description: 'Pause' },
+        { label: '←', key: 'Left', data: CliKeyData.left, description: 'Left', repeat: true },
+        { label: 'SAVE', key: 'Ctrl+S', data: CliKeyData.ctrl('s'), description: 'Save' },
+    ],
+    swipe: true,              // swipes on the screen send arrows (games on a board)
+    tap: CliKeyData.space,    // a tap sends this key's data
+    // textInput: true,       // the command also reads typed text (editors): keep the keyboard open
+};
+```
+
+- `data` is what a terminal sends for the key (`CliKeyData` has the arrows, Home/End, PgUp/PgDn, Esc, Enter, Backspace and `ctrl(letter)`); a letter key is just the letter (`'f'`).
+- List the most used keys first; `repeat: true` repeats a held key.
+- Without `textInput`, touch hosts close the on-screen keyboard so the command gets the screen (a hardware keyboard keeps working).
+
 ### Extending an existing command
 
 Set `extendsProcessor = true` to wrap a processor registered with the same `command` and delegate to `originalProcessor`.
@@ -801,6 +840,34 @@ A server plugin registers command processors in a Qodalis CLI server (Node, .NET
 - Exceptions thrown by a processor become exit code 1 with `Error executing command: <message>` (style `error`). Unknown commands return `Unknown command: <name>`.
 - Servers: Node `@qodalis/cli-server-node` (default port 8047 in the demos), .NET `Qodalis.Cli` (8046), Python `qodalis-cli-server` (8048).
 
+### Paging list output (all servers)
+
+A command that can return many rows must page them: a terminal should never receive thousands of rows.
+
+- Declare the parameters: `--skip` (default 0) and `--take` (default 50, at most 500). Node `CliPaging.parameters()`, .NET `CliPaging.Parameters()` (`Qodalis.Cli.Abstractions.Helpers`), Python `CliPaging.parameters()`.
+- Read the request: Node `CliPaging.from(command)`, .NET `CliPaging.From(command)`, Python `CliPaging.from_command(command)`. It gives `skip` and `take` for the query; missing or invalid values fall back to the defaults.
+- Query those rows (and the total when it is cheap) and write it with the paged table writer: Node `writePagedTable(headers, rows, page, { total, hasMore })`, .NET `WritePagedTable(headers, rows, page, total, hasMore)`, Python `write_paged_table(headers, rows, page, total=None, has_more=None)`. Without a total, pass `hasMore` (query `take + 1` rows to find out).
+- On the wire the table carries `page: { skip, take, total?, hasMore }`. The web terminal prints `Rows 51–100 of 1987 · next: <command> --skip 100` under it; MCP text output adds `(rows 51-100 of 1987; next: skip=100)`.
+- Safety net: a table without a page that has more than the server's `maxTableRows` / `MaxTableRows` / `max_table_rows` rows (default 200, 0 = no limit) is cut to that many and marked `page.truncated`; the terminal says the command does not page. Do not rely on it: page instead.
+
+.NET example:
+
+```csharp
+public override IEnumerable<ICliCommandParameterDescriptor>? Parameters { get; set; } = CliPaging.Parameters();
+
+public async Task<ICliStructuredResponse?> HandleStructuredAsync(CliProcessCommand command, CancellationToken cancellationToken = default)
+{
+    var page = CliPaging.From(command);
+    var total = await db.Orders.CountAsync(cancellationToken);
+    var rows = await db.Orders.OrderBy(o => o.Id).Skip(page.Skip).Take(page.Take)
+        .Select(o => new[] { o.Id.ToString(), o.Customer }).ToArrayAsync(cancellationToken);
+
+    var builder = new CliResponseBuilder();
+    builder.WritePagedTable(["Id", "Customer"], rows, page, total);
+    return builder.Build();
+}
+```
+
 ### Node: minimal server processor
 
 A Node server command extends `CliCommandProcessor` from `@qodalis/cli-server-abstractions` and returns its output text from `handleAsync`.
@@ -942,8 +1009,8 @@ export class CliUsersCommandProcessor extends CliCommandProcessor implements ICl
 }
 ```
 
-- `CliStructuredOutput` = `text` (`value`, `style?`) | `table` (`headers`, `rows`) | `list` (`items`, `ordered?`) | `json` (`value`) | `key-value` (`entries`). Import these types from `@qodalis/cli-server-abstractions` (the server package re-exports them as `CliServerOutput` / `CliServerResponse`).
-- `CliResponseBuilder` (from `@qodalis/cli-server-node`): `writeText(text, style?)`, `writeTable(headers, rows)`, `writeList(items, ordered?)`, `writeJson(value)`, `writeKeyValue(record)`, `setExitCode(code)`, `build()`.
+- `CliStructuredOutput` = `text` (`value`, `style?`) | `table` (`headers`, `rows`, `page?`) | `list` (`items`, `ordered?`) | `json` (`value`) | `key-value` (`entries`). Import these types from `@qodalis/cli-server-abstractions` (the server package re-exports them as `CliServerOutput` / `CliServerResponse`).
+- `CliResponseBuilder` (from `@qodalis/cli-server-node`): `writeText(text, style?)`, `writeTable(headers, rows)`, `writePagedTable(headers, rows, page, { total?, hasMore? })`, `writeList(items, ordered?)`, `writeJson(value)`, `writeKeyValue(record)`, `setExitCode(code)`, `build()`.
 - `/execute/stream` prefers `handleStreamAsync`, then `handleStructuredAsync` (each output emitted), then `handleAsync`.
 
 ### Node: permissions and MCP tools
@@ -1163,8 +1230,8 @@ public class CliUsersCommandProcessor : CliCommandProcessor, ICliStreamCommandPr
 }
 ```
 
-- `ICliResponseBuilder`: `WriteText(text, style?)`, `WriteTable(headers, rows)`, `WriteList(items, ordered = false)`, `WriteJson(value)`, `WriteKeyValue(dictionary)`, `SetExitCode(code)`, `Build()` -> `CliServerResponse { ExitCode, Outputs }`.
-- Output classes (`Qodalis.Cli.Models`): `TextOutput { Value, Style }`, `TableOutput { Headers, Rows }`, `ListOutput { Items, Ordered }`, `JsonOutput { Value }`, `KeyValueOutput { Entries: KeyValueEntry[] }`.
+- `ICliResponseBuilder`: `WriteText(text, style?)`, `WriteTable(headers, rows)`, `WritePagedTable(headers, rows, page, total?, hasMore?)`, `WriteList(items, ordered = false)`, `WriteJson(value)`, `WriteKeyValue(dictionary)`, `SetExitCode(code)`, `Build()` -> `CliServerResponse { ExitCode, Outputs }`.
+- Output classes (`Qodalis.Cli.Models`): `TextOutput { Value, Style }`, `TableOutput { Headers, Rows, Page? }`, `ListOutput { Items, Ordered }`, `JsonOutput { Value }`, `KeyValueOutput { Entries: KeyValueEntry[] }`.
 - The executor uses the structured result only if it is a `CliServerResponse`; an empty `HandleAsync` string produces no output.
 
 ### .NET: permissions and MCP tools
@@ -1433,7 +1500,7 @@ class CliUsersCommandProcessor(CliCommandProcessor, ICliStreamCommandProcessor):
 
 - Keep the `cancellation_event` parameter in every override: the executor always passes two arguments.
 - Return `self._STRUCTURED_NOT_IMPLEMENTED` from `handle_structured_async` to fall back to `handle_async`.
-- `CliResponseBuilder`: `write_text(text, style=None)`, `write_table(headers, rows)`, `write_list(items, ordered=False)`, `write_json(value)`, `write_key_value(dict)`, `set_exit_code(code)`, `build()` -> `CliServerResponse`. Output models (`qodalis_cli.models`): `CliServerTextOutput`, `CliServerTableOutput`, `CliServerListOutput`, `CliServerJsonOutput`, `CliServerKeyValueOutput`.
+- `CliResponseBuilder`: `write_text(text, style=None)`, `write_table(headers, rows)`, `write_paged_table(headers, rows, page, total=None, has_more=None)`, `write_list(items, ordered=False)`, `write_json(value)`, `write_key_value(dict)`, `set_exit_code(code)`, `build()` -> `CliServerResponse`. Output models (`qodalis_cli.models`): `CliServerTextOutput`, `CliServerTableOutput`, `CliServerListOutput`, `CliServerJsonOutput`, `CliServerKeyValueOutput`.
 
 ### Python: permissions and MCP tools
 
@@ -1495,6 +1562,24 @@ async def test_greet_executor():
 ```
 
 - HTTP tests: `from fastapi.testclient import TestClient`; `with TestClient(create_cli_server(CliServerOptions(configure=...)).app) as client: client.post("/api/v1/qcli/execute", json={...})`.
+
+### .NET: jobs that run elsewhere
+
+The jobs API (`/api/v1/qcli/jobs`), the `jobs_*` MCP tools, `server jobs` and the dashboard's jobs page work on an `ICliJobManager` (`Qodalis.Cli.Abstractions.Jobs`). The default runs the jobs registered with `AddJob` in the server's process; a host whose jobs run elsewhere implements the interface and registers it with `cli.SetJobManager<T>()` (scoped).
+
+- Implement `GetJobsAsync` (each `CliJobInfo` with `Id`, `Name`, `Status`, `LastRunAt`, `LastRunStatus` and `Actions`, such as `["trigger", "pause", "resume"]`), `TriggerAsync`, `PauseAsync`, `ResumeAsync`, `GetExecutionsAsync` and `GetExecutionAsync`.
+- `StopAsync`, `CancelAsync` and `UpdateAsync` default to `NotSupportedException` (HTTP `501`, `NOT_SUPPORTED`); the dashboard shows only the actions in `Actions`.
+- Throw `KeyNotFoundException` for an unknown job (`404`) and `InvalidOperationException` when the job's state refuses the action (`409`).
+
+### Admin dashboard: name and icon (all servers)
+
+The dashboard is "Qodalis Cli Admin" with the Qodalis Solutions logo unless the admin plugin sets its branding: the name and icon (browser tab, sidebar, sign-in page) and the terminal's name in its welcome banner.
+
+- .NET: `cli.AddAdmin(o => { o.Branding.Name = "RateBell"; o.Branding.IconUrl = "/favicon.svg"; o.Branding.CliName = "RateBell CLI"; })`
+- Node: `new CliAdminBuilder().setBranding({ name: 'RateBell', iconUrl: '/favicon.svg', cliName: 'RateBell CLI' })`
+- Python: `CliAdminBuilder().set_branding({"name": "RateBell", "icon_url": "/favicon.svg", "cli_name": "RateBell CLI"})`
+- The icon is an absolute http(s) URL, a root-relative path or a base64 `data:image` URL; invalid values fail at startup. The values are served as `branding` in `/qcli/admin/theme.json`.
+- The filesystem API (`/api/qcli/fs/*`) and the dashboard's Files page exist only when the server enables the filesystem (`AddFileSystem()` in .NET); otherwise the routes answer `404`.
 
 ## Recipes
 
