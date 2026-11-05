@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] - 2026-11-05
+
+### Changed
+
+- Bundled plugin guide (`docs/llms-full.txt`) refreshed for the servers' 1.0.0-beta.17: the audit log is a
+  plugin of its own on every server (.NET `Qodalis.Cli.Plugin.Audit` and `Audit.EfCore`, Node
+  `@qodalis/cli-server-plugin-audit`, Python `qodalis-cli-server-plugin-audit`), how to add it alone and set its
+  store.
+
 ## [0.2.2] - 2026-11-05
 
 ### Changed
